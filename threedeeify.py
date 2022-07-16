@@ -9,10 +9,12 @@ import shutil
 
 
 def dl_imagery(target_dir='out'):
-  pass
+  os.makedirs(target_dir, exist_ok=True)
 
 
-def main(args=sys.args):
+
+
+def main(args=sys.argv):
   dl_imagery()
 
 
