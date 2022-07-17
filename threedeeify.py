@@ -127,13 +127,19 @@ def rgba_make_black_transparent(img_px):
       px_g = img_px[y][x][g]
       px_b = img_px[y][x][b]
 
-      img_px[y][x][a] = max(0, min(255, int( (px_r + px_g + px_b) / (3) ) ))
+      img_px[y][x][a] = max(0, min(255, int( ((px_r + px_g + px_b) / (3)) * 3.0 ) ))
       
       # Make dark patches agressively more transparent!
       if img_px[y][x][a] < 84:
-        img_px[y][x][a] = int( img_px[y][x][a] / 2 )
-      if img_px[y][x][a] < 12:
-        img_px[y][x][a] = 0
+        img_px[y][x][a] = int( img_px[y][x][a] * 0.75 )
+      # if img_px[y][x][a] < 12:
+      #   img_px[y][x][a] = 0
+
+      if img_px[y][x][a] > 84:
+        img_px[y][x][a] *= 1.5 # 50% brighter
+
+      if img_px[y][x][a] > 250:
+        img_px[y][x][a] = 255
 
   return img_px
 
@@ -228,12 +234,13 @@ def main(args=sys.argv):
   # Generate aframe html code
 
   scene_html_s = ""
-  scene_html_s += '''
-<a-entity position="1.01 0 0" rotation="0 0 0" text="value: 1-0-0; color: #fe0e0e; side: double;"></a-entity>
-<a-entity position="0 1.01 0" rotation="0 0 0" text="value: 0-1-0; color: #0efe0e; side: double;"></a-entity>
-<a-entity position="0 0 1.01" rotation="0 0 0" text="value: 0-0-1; color: #0e0efe; side: double;"></a-entity>
-<a-image transparent="true" position="0 3 -31" src="img/all"></a-image>
-  '''
+#   scene_html_s += '''
+# <a-entity position="1.01 0 0" rotation="0 0 0" text="value: 1-0-0; color: #fe0e0e; side: double;"></a-entity>
+# <a-entity position="0 1.01 0" rotation="0 0 0" text="value: 0-1-0; color: #0efe0e; side: double;"></a-entity>
+# <a-entity position="0 0 1.01" rotation="0 0 0" text="value: 0-0-1; color: #0e0efe; side: double;"></a-entity>
+#   '''
+  #scene_html_s += '''<a-image transparent="true" position="0 3 -31" src="img/all" width="30" height="30"></a-image>'''
+
 
   back_begin = -4
   back_end = -12
@@ -243,8 +250,8 @@ def main(args=sys.argv):
     x = feature.get('x', 0) / 10.0
     y = feature.get('y', 0) / 10.0
     # Scale down, Normalize a bit to fit in default view pane
-    x -= 64
-    y -= 64
+    x -= 24
+    y -= 24
     x /= 10.0
     y /= 10.0
     scene_html_s += f'<a-image transparent="true" position="{x} {y} {depth_val}" src="img/{i}"></a-image>\n'

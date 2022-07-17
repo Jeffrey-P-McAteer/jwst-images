@@ -25,5 +25,8 @@ python -m threedeeify
 
 TODO
 
+## Research
+
+ - https://pyimagesearch.com/2016/10/31/detecting-multiple-bright-spots-in-an-image-with-python-and-opencv/
 
 
