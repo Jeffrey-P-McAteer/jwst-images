@@ -20,6 +20,11 @@ import numpy
 
 # python -m pip install --user scikit-image
 import skimage
+import skimage.measure
+
+# python -m pip install --user imutils
+import imutils
+import imutils.contours
 
 # python -m pip install --user aiohttp
 import aiohttp.web
@@ -144,6 +149,42 @@ def rgba_make_black_transparent(img_px):
   return img_px
 
 
+def get_xy_wh(image_pixels, transparent_pixel=None, counted_pixel=None):
+  if transparent_pixel is None and counted_pixel is None:
+    raise Exception('Must set either counted_pixel or transparent_pixel')
+  min_x = 9999999
+  max_x = 0
+  min_y = 9999999
+  max_y = 0
+  for y in range(0, len(image_pixels)):
+    for x in range(0, len(image_pixels[y])):
+      if transparent_pixel is not None:
+        if not (image_pixels[y][x] == transparent_pixel):
+          if x < min_x:
+            min_x = x
+          if x > max_x:
+            max_x = x
+          if y < min_y:
+            min_y = y
+          if y > max_y:
+            max_y = y
+      
+      if counted_pixel is not None:
+        if (image_pixels[y][x] == counted_pixel):
+          if x < min_x:
+            min_x = x
+          if x > max_x:
+            max_x = x
+          if y < min_y:
+            min_y = y
+          if y > max_y:
+            max_y = y
+
+
+  return min_x, min_y, max_x - min_x, max_y - min_y
+
+
+
 def main(args=sys.argv):
   images = dl_imagery()
 
@@ -168,59 +209,114 @@ def main(args=sys.argv):
     # {'.png': bytes(), 'x': 0, 'y': 0, 'w': 12, 'h': 12, },
 
   ]
-  image_feature_pickle_file = 'out/image_features.cache.bin'
-  os.makedirs(os.path.dirname(image_feature_pickle_file), exist_ok=True)
+  # image_feature_pickle_file = 'out/image_features.cache.bin'
+  # os.makedirs(os.path.dirname(image_feature_pickle_file), exist_ok=True)
 
-  try:
-    with open(image_feature_pickle_file, 'rb') as fd:
-      image_features = pickle.load(fd)
-  except:
-    traceback.print_exc()
+  # try:
+  #   with open(image_feature_pickle_file, 'rb') as fd:
+  #     image_features = pickle.load(fd)
+  # except:
+  #   traceback.print_exc()
 
   if len(image_features) < 1:
 
-    num_segments = 300
-    print(f'Doing expensive image slice into {num_segments} segments...')
-    image_slice_mask = skimage.segmentation.slic(image_nircam_tif, n_segments=num_segments)
-    # image_slice_mask is a 2d array with int values collecting each segment from 1 -> max(image_slice_mask)
+    nircam_grey = cv2.cvtColor(image_nircam_tif, cv2.COLOR_RGBA2GRAY)
+    
+    blur_px = 5 # must be odd
+    nircam_grey_blur = cv2.GaussianBlur(nircam_grey, (blur_px, blur_px), 0)
 
-    for segment_n in range(1, num_segments+1):
-      # Get min/max image dimensions given mask
-      n_min_x = 99999
-      n_max_x = 0
-      n_min_y = 99999
-      n_max_y = 0
-      for y in range(0, len(image_slice_mask)):
-        for x in range(0, len(image_slice_mask[y])):
-          if image_slice_mask[y][x] == segment_n:
-            # we are in segment_n
-            if x < n_min_x:
-              n_min_x = x
-            if x > n_max_x:
-              n_max_x = x
-            if y < n_min_y:
-              n_min_y = y
-            if y > n_max_y:
-              n_max_y = y
-      
-      if n_min_x == 99999 and n_min_y == 99999:
-        continue # segment_n does not exist in image
+    thresh_min = 160
+    nircam_grey_thresh = cv2.threshold(nircam_grey_blur, thresh_min, 255, cv2.THRESH_BINARY)[1]
+    
+    # Clean up noise
+    nircam_grey_thresh = cv2.erode(nircam_grey_thresh, None, iterations=2)
+    nircam_grey_thresh = cv2.dilate(nircam_grey_thresh, None, iterations=4)
 
-      # Slice bounding box for star
-      segment_img_px = crop(image_nircam_tif, n_min_x, n_min_y, n_max_x - n_min_x, n_max_y - n_min_y)
-      #segment_img_px = rgba_make_transparent_where(segment_img_px, 128, lambda x, y, px: image_slice_mask[n_min_y+y][n_min_x+x] != segment_n)
-      segment_img_px = rgba_make_black_transparent(segment_img_px)
+    nircam_labels = skimage.measure.label(nircam_grey_thresh, background=0)[0]
+    print(f'nircam_labels={nircam_labels}')
+    nircam_mask = numpy.zeros(nircam_grey_thresh.shape, dtype="uint8")
 
+    nircam_mask_min_size = 3
+    for label in numpy.unique(nircam_labels):
+      # if this is the background label, ignore it
+      if label == 0:
+        continue
+      # otherwise, construct the label mask and count the
+      # number of pixels 
+      labelMask = numpy.zeros(nircam_grey_thresh.shape, dtype="uint8")
+      labelMask[nircam_labels == label] = 255
+      numPixels = cv2.countNonZero(labelMask)
+      # if the number of pixels in the component is sufficiently
+      # large, then add it to our mask of "large blobs"
+      if numPixels > nircam_mask_min_size:
+        nircam_mask = cv2.add(nircam_mask, labelMask)
+
+      # Store just this labelMask as a segment
+      x, y, w, h = get_xy_wh(labelMask, counted_pixel=255)
+      segment_img_px = crop(image_nircam_tif, x, y, w, h)
       segment_d = {
         '.png': cv2.imencode('.png', segment_img_px)[1].tobytes(),
-        'x': n_min_x,
-        'y': n_min_y,
-        'w': n_max_x - n_min_x,
-        'h': n_max_y - n_min_y,
+        'x': x,
+        'y': y,
+        'w': w,
+        'h': h,
       }
       #print(f'segment_d={segment_d}')
       image_features.append(segment_d)
-      print(f'Saved segment_n={segment_n}/{num_segments}')
+      print(f'Saved segment number {len(image_features)}')
+
+      print(f'x={x} y={x} w={w} h={h}')
+      cv2.imshow('img', segment_img_px)
+      cv2.waitKey(0)
+
+
+    print('nircam_grey_blur:')
+    cv2.imshow('img', nircam_grey_blur)
+    cv2.waitKey(0)
+    cv2.imshow('img', nircam_grey_thresh)
+    cv2.waitKey(0)
+    cv2.imshow('img', nircam_mask)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+
+    # for segment_n in range(1, num_segments+1):
+    #   # Get min/max image dimensions given mask
+    #   n_min_x = 99999
+    #   n_max_x = 0
+    #   n_min_y = 99999
+    #   n_max_y = 0
+    #   for y in range(0, len(image_slice_mask)):
+    #     for x in range(0, len(image_slice_mask[y])):
+    #       if image_slice_mask[y][x] == segment_n:
+    #         # we are in segment_n
+    #         if x < n_min_x:
+    #           n_min_x = x
+    #         if x > n_max_x:
+    #           n_max_x = x
+    #         if y < n_min_y:
+    #           n_min_y = y
+    #         if y > n_max_y:
+    #           n_max_y = y
+      
+    #   if n_min_x == 99999 and n_min_y == 99999:
+    #     continue # segment_n does not exist in image
+
+    #   # Slice bounding box for star
+    #   segment_img_px = crop(image_nircam_tif, n_min_x, n_min_y, n_max_x - n_min_x, n_max_y - n_min_y)
+    #   #segment_img_px = rgba_make_transparent_where(segment_img_px, 128, lambda x, y, px: image_slice_mask[n_min_y+y][n_min_x+x] != segment_n)
+    #   segment_img_px = rgba_make_black_transparent(segment_img_px)
+
+    #   segment_d = {
+    #     '.png': cv2.imencode('.png', segment_img_px)[1].tobytes(),
+    #     'x': n_min_x,
+    #     'y': n_min_y,
+    #     'w': n_max_x - n_min_x,
+    #     'h': n_max_y - n_min_y,
+    #   }
+    #   #print(f'segment_d={segment_d}')
+    #   image_features.append(segment_d)
+    #   print(f'Saved segment_n={segment_n}/{num_segments}')
 
     try:
       with open(image_feature_pickle_file, 'wb') as fd:
@@ -247,14 +343,16 @@ def main(args=sys.argv):
 
   for i, feature in enumerate(image_features):
     depth_val = random.randrange(min(back_begin, back_end), max(back_begin, back_end))
-    x = feature.get('x', 0) / 10.0
-    y = feature.get('y', 0) / 10.0
+    x = feature.get('x', 0)
+    y = feature.get('y', 0)
+    w = feature.get('w', 0)
+    h = feature.get('h', 0)
     # Scale down, Normalize a bit to fit in default view pane
     x -= 24
     y -= 24
-    x /= 10.0
-    y /= 10.0
-    scene_html_s += f'<a-image transparent="true" position="{x} {y} {depth_val}" src="img/{i}"></a-image>\n'
+    x /= 100.0
+    y /= 100.0
+    scene_html_s += f'<a-image transparent="true" position="{x} {y} {depth_val}" src="img/{i}" width="{w/10.0}" height="{h/10.0}"></a-image>\n'
     print(f'Added feature {i} at {round(x, 2)},{round(y, 2)} depth={round(depth_val, 2)}')
 
   # for x in range(-8, 8, 2):
