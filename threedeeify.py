@@ -195,137 +195,79 @@ def main(args=sys.argv):
   # Image begins in sRGB color space
   image_nircam_tif = cv2.cvtColor(image_nircam_tif, cv2.COLOR_RGB2RGBA)
 
-  image_nircam_tif = crop(image_nircam_tif, 0, 0, 1024, 1024) # Make image much smaller to facilitate R&D
-  if len(image_nircam_tif) <= 1024:
+  image_nircam_tif = crop(image_nircam_tif, 0, 0, 2048, 2048) # Make image much smaller to facilitate R&D
+  if len(image_nircam_tif) <= 2048:
     print('Warning: using cropped image for fast r&d')
-  
-  # print(f'image_nircam_tif={image_nircam_tif}')
-  # print(f'image_miri_tif={image_miri_tif}')
 
   entire_img_png_bytes = cv2.imencode('.png', image_nircam_tif)[1].tobytes()
+
+  image_nircam_tif_annotated = image_nircam_tif.copy()
   
   # Segment nircam into a list of features with x,y coordinates in pixels
   image_features = [
     # {'.png': bytes(), 'x': 0, 'y': 0, 'w': 12, 'h': 12, },
-
   ]
-  # image_feature_pickle_file = 'out/image_features.cache.bin'
-  # os.makedirs(os.path.dirname(image_feature_pickle_file), exist_ok=True)
+  # Compute image_features
+  nircam_grey = cv2.cvtColor(image_nircam_tif, cv2.COLOR_RGBA2GRAY)
+  
+  blur_px = 3 # must be odd
+  nircam_grey_blur = cv2.GaussianBlur(nircam_grey, (blur_px, blur_px), 0)
 
-  # try:
-  #   with open(image_feature_pickle_file, 'rb') as fd:
-  #     image_features = pickle.load(fd)
-  # except:
-  #   traceback.print_exc()
+  thresh_min = 90
+  nircam_grey_thresh = cv2.threshold(nircam_grey_blur, thresh_min, 255, cv2.THRESH_BINARY)[1]
+  
+  # Clean up noise
+  nircam_grey_thresh = cv2.erode(nircam_grey_thresh, None, iterations=2)
+  nircam_grey_thresh = cv2.dilate(nircam_grey_thresh, None, iterations=4)
 
-  if len(image_features) < 1:
-
-    nircam_grey = cv2.cvtColor(image_nircam_tif, cv2.COLOR_RGBA2GRAY)
-    
-    blur_px = 5 # must be odd
-    nircam_grey_blur = cv2.GaussianBlur(nircam_grey, (blur_px, blur_px), 0)
-
-    thresh_min = 160
-    nircam_grey_thresh = cv2.threshold(nircam_grey_blur, thresh_min, 255, cv2.THRESH_BINARY)[1]
-    
-    # Clean up noise
-    nircam_grey_thresh = cv2.erode(nircam_grey_thresh, None, iterations=2)
-    nircam_grey_thresh = cv2.dilate(nircam_grey_thresh, None, iterations=4)
-
-    nircam_labels = skimage.measure.label(nircam_grey_thresh, background=0)[0]
-    print(f'nircam_labels={nircam_labels}')
-    nircam_mask = numpy.zeros(nircam_grey_thresh.shape, dtype="uint8")
-
-    nircam_mask_min_size = 3
-    for label in numpy.unique(nircam_labels):
-      # if this is the background label, ignore it
-      if label == 0:
-        continue
-      # otherwise, construct the label mask and count the
-      # number of pixels 
-      labelMask = numpy.zeros(nircam_grey_thresh.shape, dtype="uint8")
-      labelMask[nircam_labels == label] = 255
-      numPixels = cv2.countNonZero(labelMask)
-      # if the number of pixels in the component is sufficiently
-      # large, then add it to our mask of "large blobs"
-      if numPixels > nircam_mask_min_size:
-        nircam_mask = cv2.add(nircam_mask, labelMask)
-
-      # Store just this labelMask as a segment
-      x, y, w, h = get_xy_wh(labelMask, counted_pixel=255)
-      segment_img_px = crop(image_nircam_tif, x, y, w, h)
-      segment_d = {
-        '.png': cv2.imencode('.png', segment_img_px)[1].tobytes(),
-        'x': x,
-        'y': y,
-        'w': w,
-        'h': h,
-      }
-      #print(f'segment_d={segment_d}')
-      image_features.append(segment_d)
-      print(f'Saved segment number {len(image_features)}')
-
-      print(f'x={x} y={x} w={w} h={h}')
-      cv2.imshow('img', segment_img_px)
-      cv2.waitKey(0)
+  nircam_grey_thresh = cv2.threshold(nircam_grey_thresh, thresh_min, 255, cv2.THRESH_BINARY)[1]
 
 
-    print('nircam_grey_blur:')
-    cv2.imshow('img', nircam_grey_blur)
-    cv2.waitKey(0)
-    cv2.imshow('img', nircam_grey_thresh)
-    cv2.waitKey(0)
-    cv2.imshow('img', nircam_mask)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+  nircam_labels = skimage.measure.label(nircam_grey_thresh, connectivity=2, background=0, return_num=False)
+  print(f'nircam_labels={nircam_labels}')
 
+  nircam_regions = skimage.measure.regionprops(nircam_labels)
+  
+  nircam_mask_min_size = 4
 
-    # for segment_n in range(1, num_segments+1):
-    #   # Get min/max image dimensions given mask
-    #   n_min_x = 99999
-    #   n_max_x = 0
-    #   n_min_y = 99999
-    #   n_max_y = 0
-    #   for y in range(0, len(image_slice_mask)):
-    #     for x in range(0, len(image_slice_mask[y])):
-    #       if image_slice_mask[y][x] == segment_n:
-    #         # we are in segment_n
-    #         if x < n_min_x:
-    #           n_min_x = x
-    #         if x > n_max_x:
-    #           n_max_x = x
-    #         if y < n_min_y:
-    #           n_min_y = y
-    #         if y > n_max_y:
-    #           n_max_y = y
-      
-    #   if n_min_x == 99999 and n_min_y == 99999:
-    #     continue # segment_n does not exist in image
+  for region in nircam_regions:
 
-    #   # Slice bounding box for star
-    #   segment_img_px = crop(image_nircam_tif, n_min_x, n_min_y, n_max_x - n_min_x, n_max_y - n_min_y)
-    #   #segment_img_px = rgba_make_transparent_where(segment_img_px, 128, lambda x, y, px: image_slice_mask[n_min_y+y][n_min_x+x] != segment_n)
-    #   segment_img_px = rgba_make_black_transparent(segment_img_px)
+    # print(f'region={region}')
+    print(f'bbox={region.bbox}')
+  
+    y0, x0 = region.centroid
+    #min_x, min_y, max_x, max_y = region.bbox
+    min_y, min_x, max_y, max_x = region.bbox
+    width = max_x - min_x
+    height = max_y - min_y
 
-    #   segment_d = {
-    #     '.png': cv2.imencode('.png', segment_img_px)[1].tobytes(),
-    #     'x': n_min_x,
-    #     'y': n_min_y,
-    #     'w': n_max_x - n_min_x,
-    #     'h': n_max_y - n_min_y,
-    #   }
-    #   #print(f'segment_d={segment_d}')
-    #   image_features.append(segment_d)
-    #   print(f'Saved segment_n={segment_n}/{num_segments}')
+    if width < nircam_mask_min_size or height < nircam_mask_min_size:
+      continue
 
-    try:
-      with open(image_feature_pickle_file, 'wb') as fd:
-        pickle.dump(image_features, fd)
-      print(f'Saved sliced images to {image_feature_pickle_file}')
-    except:
-      traceback.print_exc()
+    # Store just this labelMask as a segment
+    segment_img_px = crop(image_nircam_tif, min_x, min_y, width, height)
+    segment_d = {
+      '.png': cv2.imencode('.png', segment_img_px)[1].tobytes(),
+      'x': min_x,
+      'y': min_y,
+      'w': width,
+      'h': height,
+    }
+    #print(f'segment_d={segment_d}')
+    image_features.append(segment_d)
+    print(f'Saved segment number {len(image_features)}')
 
-  print(f'have {len(image_features)} image_features')
+    image_nircam_tif_annotated = cv2.rectangle(
+      image_nircam_tif_annotated,
+      (min_x, min_y), (max_x, max_y), # pt1, pt2
+      (240, 0, 0, 255), # rgba pixel
+      thickness = 2
+    )
+
+  image_nircam_tif_annotated_png_bytes = cv2.imencode('.png', image_nircam_tif_annotated)[1].tobytes()
+  nircam_grey_thresh_png_bytes = cv2.imencode('.png', nircam_grey_thresh)[1].tobytes()
+
+  print(f'Computed {len(image_features)} image_features')
   
   # Generate aframe html code
 
@@ -347,12 +289,18 @@ def main(args=sys.argv):
     y = feature.get('y', 0)
     w = feature.get('w', 0)
     h = feature.get('h', 0)
+    
     # Scale down, Normalize a bit to fit in default view pane
     x -= 24
     y -= 24
+    
     x /= 100.0
     y /= 100.0
-    scene_html_s += f'<a-image transparent="true" position="{x} {y} {depth_val}" src="img/{i}" width="{w/10.0}" height="{h/10.0}"></a-image>\n'
+    
+    w /= 15.0
+    h /= 15.0
+
+    scene_html_s += f'<a-image transparent="true" position="{x} {y} {depth_val}" src="img/{i}" width="{w}" height="{h}"></a-image>\n'
     print(f'Added feature {i} at {round(x, 2)},{round(y, 2)} depth={round(depth_val, 2)}')
 
   # for x in range(-8, 8, 2):
@@ -385,12 +333,27 @@ def main(args=sys.argv):
     nonlocal index_html_s
     return aiohttp.web.Response(text=index_html_s, content_type='text/html')
 
+  async def http_debug_req_handler(req):
+    nonlocal index_html_s
+    return aiohttp.web.Response(text='''
+      <img src="img/all" style="max-width:98%" /><br>
+      <img src="img/thresh" style="max-width:98%" /><br>
+      <img src="img/anno" style="max-width:98%" /><br>
+'''.strip(), content_type='text/html')
+
   async def http_image_req_handler(req):
     nonlocal image_features
     nonlocal entire_img_png_bytes
     star_id = req.match_info.get('star_id', 'none')
-    if star_id == 'all':
+
+    # Debugging
+    if 'all' in star_id:
       return aiohttp.web.Response(body=entire_img_png_bytes, content_type='image/png')
+    elif 'thresh' in star_id:
+      return aiohttp.web.Response(body=nircam_grey_thresh_png_bytes, content_type='image/png')
+    elif 'anno' in star_id:
+      return aiohttp.web.Response(body=image_nircam_tif_annotated_png_bytes, content_type='image/png')
+    
     try:
       star_id_num = int(star_id)
       if star_id_num >= 0 and star_id_num < len(image_features):
@@ -403,6 +366,7 @@ def main(args=sys.argv):
   server.add_routes([
     aiohttp.web.get('/', http_index_req_handler),
     aiohttp.web.get('/index.html', http_index_req_handler),
+    aiohttp.web.get('/debug', http_debug_req_handler),
     aiohttp.web.get('/img/{star_id}', http_image_req_handler),
   ])
 
