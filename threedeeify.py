@@ -322,8 +322,8 @@ def main(args=sys.argv):
     h = feature.get('h', 0)
     
     # Scale down, Normalize a bit to fit in default view pane
-    x -= 0
-    y -= 0
+    x -= 256
+    y -= 1024
     
     x /= 120.0
     y /= 120.0
