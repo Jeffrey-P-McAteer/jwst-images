@@ -244,10 +244,41 @@ def main(args=sys.argv):
     if width < nircam_mask_min_size or height < nircam_mask_min_size:
       continue
 
-    # Store just this labelMask as a segment
     segment_img_px = crop(image_nircam_tif, min_x, min_y, width, height)
+
+    # And now we will do a smaller-scale threshold to mask & convert dark pixels to transparent
+    segment_img_grey = cv2.cvtColor(segment_img_px, cv2.COLOR_RGBA2GRAY)
+    #segment_img_thresh_a = cv2.threshold(segment_img_grey, 60, 255, cv2.THRESH_BINARY)[1]
+
+    # For all pixels < 120, scale down. For all >120, scale up.
+    for _y in range(0, len(segment_img_grey)):
+      for _x in range(0, len(segment_img_grey[_y])):
+        if segment_img_grey[_y][_x] < 60:
+          segment_img_grey[_y][_x] = max(0,   int( segment_img_grey[_y][_x] * 0.60 ) )
+        elif segment_img_grey[_y][_x] < 80:
+          segment_img_grey[_y][_x] = max(0,   int( segment_img_grey[_y][_x] * 0.80 ) )
+        elif segment_img_grey[_y][_x] < 128:
+          segment_img_grey[_y][_x] = max(0,   int( segment_img_grey[_y][_x] * 0.90 ) )
+        elif segment_img_grey[_y][_x] < 180:
+          segment_img_grey[_y][_x] = min(255, int( segment_img_grey[_y][_x] * 1.10 ) )
+        elif segment_img_grey[_y][_x] < 240:
+          segment_img_grey[_y][_x] = min(255, int( segment_img_grey[_y][_x] * 1.20 ) )
+        else:
+          segment_img_grey[_y][_x] = min(255, int( segment_img_grey[_y][_x] * 1.30 ) )
+
+        if segment_img_grey[_y][_x] < 35:
+          segment_img_grey[_y][_x] = 0
+
+
+    
+    chan_r, chan_g, chan_b, orig_a = cv2.split(segment_img_px)
+    #chan_rgba = [chan_r, chan_g, chan_b, segment_img_thresh_a]
+    chan_rgba = [chan_r, chan_g, chan_b, segment_img_grey]
+    trans_segment_img_px = cv2.merge(chan_rgba, 4)
+
     segment_d = {
-      '.png': cv2.imencode('.png', segment_img_px)[1].tobytes(),
+      #'.png': cv2.imencode('.png', segment_img_px)[1].tobytes(),
+      '.png': cv2.imencode('.png', trans_segment_img_px)[1].tobytes(),
       'x': min_x,
       'y': min_y,
       'w': width,
@@ -284,21 +315,21 @@ def main(args=sys.argv):
   back_end = -12
 
   for i, feature in enumerate(image_features):
-    depth_val = random.randrange(min(back_begin, back_end), max(back_begin, back_end))
+    depth_val = int( random.randrange(min(back_begin, back_end)*100, max(back_begin, back_end)*100) / 100.0)
     x = feature.get('x', 0)
     y = feature.get('y', 0)
     w = feature.get('w', 0)
     h = feature.get('h', 0)
     
     # Scale down, Normalize a bit to fit in default view pane
-    x -= 24
-    y -= 24
+    x -= 0
+    y -= 0
     
-    x /= 100.0
-    y /= 100.0
+    x /= 120.0
+    y /= 120.0
     
-    w /= 15.0
-    h /= 15.0
+    w /= 20.0
+    h /= 20.0
 
     scene_html_s += f'<a-image transparent="true" position="{x} {y} {depth_val}" src="img/{i}" width="{w}" height="{h}"></a-image>\n'
     print(f'Added feature {i} at {round(x, 2)},{round(y, 2)} depth={round(depth_val, 2)}')
