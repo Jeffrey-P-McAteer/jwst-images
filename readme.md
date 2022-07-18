@@ -9,6 +9,7 @@
 python -m pip install --user opencv-python
 python -m pip install --user numpy
 python -m pip install --user scikit-image
+python -m pip install --user imutils
 python -m pip install --user aiohttp
 
 ```
