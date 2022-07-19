@@ -195,9 +195,20 @@ def main(args=sys.argv):
   # Image begins in sRGB color space
   image_nircam_tif = cv2.cvtColor(image_nircam_tif, cv2.COLOR_RGB2RGBA)
 
-  #image_nircam_tif = crop(image_nircam_tif, 0, 0, 2048, 2048) # Make image much smaller to facilitate R&D
-  #if len(image_nircam_tif) <= 2048:
-  #  print('Warning: using cropped image for fast r&d')
+  make_quest_2_modifications = True # Set to false for the whole image
+
+  if make_quest_2_modifications:
+    # This value shown to be the largest the Oculus 2 can hangle before it's GPU falls over.
+    performance_crop_size_px = 1024 * 3
+    # Ensure always <= image size
+    full_h = len(image_nircam_tif)
+    full_w = len(image_nircam_tif[0])
+    performance_crop_size_px = min(performance_crop_size_px, min(full_h, full_w) )
+    # pick random x/y offsets that fit within image to increase variety
+    performance_crop_x = random.randint(0, full_w - performance_crop_size_px)
+    performance_crop_y = random.randint(0, full_h - performance_crop_size_px)
+    image_nircam_tif = crop(image_nircam_tif, performance_crop_x, performance_crop_y, performance_crop_size_px, performance_crop_size_px) # Make image much smaller to facilitate R&D
+    print(f'Warning: using cropped image for fast r&d, {performance_crop_size_px}x{performance_crop_size_px} instead of the full {full_w}x{full_h}')
 
   entire_img_png_bytes = cv2.imencode('.png', image_nircam_tif)[1].tobytes()
 
@@ -231,8 +242,10 @@ def main(args=sys.argv):
   nircam_mask_min_size = 4
 
   for region in nircam_regions:
-
-    # print(f'region={region}')
+    if make_quest_2_modifications and len(image_features) > 498:
+      print(f'Ignoring region={region} because we already have {len(image_features)} features and make_quest_2_modifications={make_quest_2_modifications}. The quest looks like it breaks badly if we give it >500 images.')
+      continue
+    
     print(f'bbox={region.bbox}')
   
     y0, x0 = region.centroid
@@ -304,14 +317,57 @@ def main(args=sys.argv):
 
   scene_html_s = ""
   # Define a camera that can move in VR land
+#   scene_html_s += '''
+# <a-entity id="camera-parent" movement-controls="enabled: true; constrainToNavMesh: false; speed: 0.25; fly: true;" position="0 1 0" camera-property-listener>
+#   <a-entity id="camera" camera position="0 0 0" look-controls="pointerLockEnabled: false;"></a-entity>
+#   <!-- <a-entity cursor="rayOrigin:mouse" raycaster="objects: .raytarget"></a-entity>
+#   <a-entity laser-controls="hand: right"></a-entity> -->
+# </a-entity>
+# '''
   scene_html_s += '''
-<a-entity id="camera-parent" movement-controls="enabled: true; constrainToNavMesh: false; speed: 0.25; fly: true;" position="0 1 0" camera-property-listener>
-  <a-entity id="camera" camera position="0 0 0" look-controls="pointerLockEnabled: false;"></a-entity>
-  <a-entity oculus-touch-controls="hand: left"></a-entity>
-  <a-entity oculus-touch-controls="hand: right"></a-entity>
+<!-- Camera + controllers rig -->
+<script>
+function a_btn_down() { // go down
+  try {
+    document.querySelector("a-scene").camera.el.parentNode.object3D.position.y -= 1;
+  }
+  catch (e) { }
+  document.querySelector("a-scene").camera.el.object3D.position.y -= 1;
+}
+function b_btn_down() { // go up
+  try {
+    document.querySelector("a-scene").camera.el.parentNode.object3D.position.y += 1;
+  }
+  catch (e) { }
+  document.querySelector("a-scene").camera.el.object3D.position.y += 1;
+}
 
-  <!-- <a-entity cursor="rayOrigin:mouse" raycaster="objects: .raytarget"></a-entity>
-  <a-entity laser-controls="hand: right"></a-entity> -->
+AFRAME.registerComponent('threedeeify-abyx-height-adjustment',{
+  init: function () {
+    this.el.addEventListener('abuttondown', this.on_abuttondown);
+    this.el.addEventListener('bbuttondown', this.on_bbuttondown);
+    this.el.addEventListener('xbuttondown', this.on_xbuttondown);
+    this.el.addEventListener('ybuttondown', this.on_ybuttondown);
+  },
+  on_abuttondown: function (evt) {
+    a_btn_down();
+  },
+  on_bbuttondown: function (evt) {
+    b_btn_down();
+  },
+  on_xbuttondown: function (evt) {
+    a_btn_down();
+  },
+  on_ybuttondown: function (evt) {
+    b_btn_down();
+  }
+});
+
+</script>
+<a-entity id="rig">
+  <a-camera position="0 1 0"></a-camera>
+  <a-entity oculus-touch-controls="hand: left" threedeeify-abyx-height-adjustment></a-entity>
+  <a-entity oculus-touch-controls="hand: right" oculus-thumbstick-controls threedeeify-abyx-height-adjustment></a-entity>
 </a-entity>
 '''
 #   scene_html_s += '''
@@ -355,6 +411,8 @@ def main(args=sys.argv):
   <head>
     <title>"""+image_tag+""" Projection Viewer</title>
     <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+    <!-- thanks https://stackoverflow.com/questions/71131300/cant-move-camera-in-a-frame-with-oculus-quest-2 -->
+    <script src="https://gftruj.github.io/webzamples/aframe/controls/oculus-thumbstick-controls.js"></script>
   </head>
   <body>
     <a-scene background="color: #000000">
