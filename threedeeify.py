@@ -152,9 +152,9 @@ def rgba_make_black_transparent(img_px):
 def get_xy_wh(image_pixels, transparent_pixel=None, counted_pixel=None):
   if transparent_pixel is None and counted_pixel is None:
     raise Exception('Must set either counted_pixel or transparent_pixel')
-  min_x = 9999999
+  min_x = 999999999
   max_x = 0
-  min_y = 9999999
+  min_y = 999999999
   max_y = 0
   for y in range(0, len(image_pixels)):
     for x in range(0, len(image_pixels[y])):
@@ -195,9 +195,9 @@ def main(args=sys.argv):
   # Image begins in sRGB color space
   image_nircam_tif = cv2.cvtColor(image_nircam_tif, cv2.COLOR_RGB2RGBA)
 
-  image_nircam_tif = crop(image_nircam_tif, 0, 0, 2048, 2048) # Make image much smaller to facilitate R&D
-  if len(image_nircam_tif) <= 2048:
-    print('Warning: using cropped image for fast r&d')
+  #image_nircam_tif = crop(image_nircam_tif, 0, 0, 2048, 2048) # Make image much smaller to facilitate R&D
+  #if len(image_nircam_tif) <= 2048:
+  #  print('Warning: using cropped image for fast r&d')
 
   entire_img_png_bytes = cv2.imencode('.png', image_nircam_tif)[1].tobytes()
 
@@ -213,7 +213,7 @@ def main(args=sys.argv):
   blur_px = 3 # must be odd
   nircam_grey_blur = cv2.GaussianBlur(nircam_grey, (blur_px, blur_px), 0)
 
-  thresh_min = 90
+  thresh_min = 60
   nircam_grey_thresh = cv2.threshold(nircam_grey_blur, thresh_min, 255, cv2.THRESH_BINARY)[1]
   
   # Clean up noise
@@ -311,34 +311,34 @@ def main(args=sys.argv):
   #scene_html_s += '''<a-image transparent="true" position="0 3 -31" src="img/all" width="30" height="30"></a-image>'''
 
 
-  back_begin = -4
-  back_end = -12
+  back_begin = -1
+  back_end = -16
 
   for i, feature in enumerate(image_features):
-    depth_val = int( random.randrange(min(back_begin, back_end)*100, max(back_begin, back_end)*100) / 100.0)
+    depth_val = float( random.randrange(min(back_begin, back_end)*100, max(back_begin, back_end)*100) / 100.0)
     x = feature.get('x', 0)
     y = feature.get('y', 0)
     w = feature.get('w', 0)
     h = feature.get('h', 0)
     
     # Scale down, Normalize a bit to fit in default view pane
-    x -= 256
-    y -= 1024
+    x -= 256 * 2
+    y -= 1024 * 2
     
     x /= 120.0
     y /= 120.0
     
-    w /= 20.0
-    h /= 20.0
+    w /= 50.0
+    h /= 50.0
+
+    # Bias depth so the larger a feature is (in px/50.0), the closer it will generally be to 0 (aka closer to the user)
+    depth_val /= ((w*h)**( 1/6 )) * 0.1
+
 
     scene_html_s += f'<a-image transparent="true" position="{x} {y} {depth_val}" src="img/{i}" width="{w}" height="{h}"></a-image>\n'
     print(f'Added feature {i} at {round(x, 2)},{round(y, 2)} depth={round(depth_val, 2)}')
 
-  # for x in range(-8, 8, 2):
-  #   for y in range(-8, 8, 2):
-  #     depth_val = random.randrange(-30, -5)
-  #     scene_html_s += f'<a-image transparent="true" position="{x} {y} {depth_val}" src="img/test01"></a-image>\n'
-
+  print(f'Generated <a-image> for  {len(image_features)} image_features')
 
   index_html_s = """<!DOCTYPE html>
 <html>
