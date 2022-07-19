@@ -303,13 +303,23 @@ def main(args=sys.argv):
   # Generate aframe html code
 
   scene_html_s = ""
+  # Define a camera that can move in VR land
+  scene_html_s += '''
+<a-entity id="camera-parent" movement-controls="enabled: true; constrainToNavMesh: false; speed: 0.25; fly: true;" position="0 1 0" camera-property-listener>
+  <a-entity id="camera" camera position="0 0 0" look-controls="pointerLockEnabled: false;"></a-entity>
+  <a-entity oculus-touch-controls="hand: left"></a-entity>
+  <a-entity oculus-touch-controls="hand: right"></a-entity>
+
+  <!-- <a-entity cursor="rayOrigin:mouse" raycaster="objects: .raytarget"></a-entity>
+  <a-entity laser-controls="hand: right"></a-entity> -->
+</a-entity>
+'''
 #   scene_html_s += '''
 # <a-entity position="1.01 0 0" rotation="0 0 0" text="value: 1-0-0; color: #fe0e0e; side: double;"></a-entity>
 # <a-entity position="0 1.01 0" rotation="0 0 0" text="value: 0-1-0; color: #0efe0e; side: double;"></a-entity>
 # <a-entity position="0 0 1.01" rotation="0 0 0" text="value: 0-0-1; color: #0e0efe; side: double;"></a-entity>
 #   '''
   #scene_html_s += '''<a-image transparent="true" position="0 3 -31" src="img/all" width="30" height="30"></a-image>'''
-
 
   back_begin = -1
   back_end = -16
